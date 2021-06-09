@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/com.hty.photomap"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context=".MapActivity">
+    android:layout_height="match_parent">
 
-    <cn.creable.ucmap.openGIS.UCMapView
-        android:id="@+id/mapView"
+    <com.baidu.mapapi.map.MapView
+        android:id="@+id/bmapView"
         android:layout_width="fill_parent"
-        android:layout_height="fill_parent" />
+        android:layout_height="fill_parent"
+        android:clickable="true" />
 
     <TextView
         android:id="@+id/textView"
@@ -28,11 +27,10 @@
         android:id="@+id/imageButton_location"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_alignParentRight="true"
         android:layout_alignParentBottom="true"
-        android:layout_marginRight="20sp"
-        android:layout_marginBottom="20sp"
+        android:layout_marginBottom="40sp"
         android:background="@null"
-        app:srcCompat="@android:drawable/ic_menu_mylocation" />
+        android:paddingLeft="10dp"
+        android:src="@android:drawable/ic_menu_mylocation" />
 
 </RelativeLayout>

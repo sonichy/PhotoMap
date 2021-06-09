@@ -1,16 +1,15 @@
 package com.hty.photomap;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.media.ExifInterface;
+
 import android.net.Uri;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -18,11 +17,21 @@ import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.GeometryFactory;
+import com.baidu.mapapi.SDKInitializer;
+import com.baidu.mapapi.map.BaiduMap;
+import com.baidu.mapapi.map.BitmapDescriptor;
+import com.baidu.mapapi.map.BitmapDescriptorFactory;
+import com.baidu.mapapi.map.MapStatus;
+import com.baidu.mapapi.map.MapStatusUpdateFactory;
+import com.baidu.mapapi.map.MapView;
+import com.baidu.mapapi.map.Marker;
+import com.baidu.mapapi.map.MarkerOptions;
+import com.baidu.mapapi.map.OverlayOptions;
+import com.baidu.mapapi.map.PolylineOptions;
+import com.baidu.mapapi.map.UiSettings;
+import com.baidu.mapapi.model.LatLng;
+import com.baidu.mapapi.utils.CoordinateConverter;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -30,43 +39,65 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-import cn.creable.ucmap.openGIS.UCCoordinateFilter;
-import cn.creable.ucmap.openGIS.UCMapView;
-import cn.creable.ucmap.openGIS.UCMarker;
-import cn.creable.ucmap.openGIS.UCMarkerLayer;
-import cn.creable.ucmap.openGIS.UCMarkerLayerListener;
-import cn.creable.ucmap.openGIS.UCRasterLayer;
-import cn.creable.ucmap.openGIS.UCVectorLayer;
-
-public class MapActivity extends AppCompatActivity {
+public class MapActivity extends Activity {
 
     TextView textView, textView_info;
     SimpleDateFormat SDF = new SimpleDateFormat("yyyy年MM月dd日");
     SimpleDateFormat SDF_time = new SimpleDateFormat("yyyy年MM月dd日 HH:mm:ss");
-    UCMapView mapView;
-    UCVectorLayer VLayer;
-    UCRasterLayer RLayer;
-    UCMarkerLayer MLayer;
-    UCMarker marker;
-    GeometryFactory GF = new GeometryFactory();
-    int maptype = 0;
-    List<Coordinate> list_coordinate;
-    Coordinate[] coords;
+    String dir;
+
+    List<LatLng> list_LatLng = new ArrayList<LatLng>();
+    MapView mMapView = null;
+    BaiduMap mBaiduMap;
+    BitmapDescriptor bitmap1, bitmap2, bitmap3, bitmap4;
+    Marker marker1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SDKInitializer.initialize(getApplicationContext());
         setContentView(R.layout.activity_map);
-        textView = findViewById(R.id.textView);
-        textView_info = findViewById(R.id.textView_info);
-        ImageButton imageButton_location = findViewById(R.id.imageButton_location);
+        dir = Environment.getExternalStorageDirectory().getPath();
+        mMapView = (MapView) findViewById(R.id.bmapView);
+        mBaiduMap = mMapView.getMap();
+        mBaiduMap.setMapStatus(MapStatusUpdateFactory.newMapStatus(new MapStatus.Builder().zoom(16).build()));
+        mBaiduMap.setOnMarkerClickListener(new BaiduMap.OnMarkerClickListener() {
+            @Override
+            public boolean onMarkerClick(Marker marker) {
+                Bundle extraInfo = marker.getExtraInfo();
+                int index = extraInfo.getInt("index");
+                String time = extraInfo.getString("time");
+                String image_path = extraInfo.getString("image_path");
+                ImageView imageView = new ImageView(MapActivity.this);
+                Uri uri = Uri.fromFile(new File(image_path));
+                imageView.setImageURI(uri);
+                new AlertDialog.Builder(MapActivity.this).setTitle(index + ":" + time).setView(imageView).setPositiveButton("确定", null).show();
+                textView_info.setText(index + "\n经度：" + marker.getPosition().latitude + "\n纬度：" + marker.getPosition().longitude);
+                marker1.setPosition(new LatLng(marker.getPosition().latitude, marker.getPosition().longitude));
+                return false;
+            }
+        });
+        UiSettings settings = mBaiduMap.getUiSettings();
+        settings.setRotateGesturesEnabled(false);
+        settings.setOverlookingGesturesEnabled(false);
+        textView = (TextView) findViewById(R.id.textView);
+        textView_info = (TextView) findViewById(R.id.textView_info);
+        ImageButton imageButton_location = (ImageButton) findViewById(R.id.imageButton_location);
         imageButton_location.setOnClickListener(new ClickListener());
+        bitmap1 = BitmapDescriptorFactory.fromResource(R.drawable.marker_start);
+        bitmap2 = BitmapDescriptorFactory.fromResource(R.drawable.marker_end);
+        bitmap3 = BitmapDescriptorFactory.fromResource(R.drawable.marker_point);
+        bitmap4 = BitmapDescriptorFactory.fromResource(R.drawable.marker);
+        OverlayOptions option = new MarkerOptions().position(new LatLng(0,0)).icon(bitmap4);
+        marker1 = (Marker) mBaiduMap.addOverlay(option);
+
         Intent intent = getIntent();
         String sdate = intent.getStringExtra("date");
         Date date = null;
         try {
             date = SDF.parse(sdate);
         } catch (Exception e) {
+            Log.e(Thread.currentThread().getStackTrace()[2] + "", e.toString());
         }
         long ldate = date.getTime();
         long ldate1 = ldate + 24*60*60*1000;
@@ -76,9 +107,9 @@ public class MapActivity extends AppCompatActivity {
         String selection = MediaStore.Images.Media.DATE_TAKEN + ">=? and " + MediaStore.Images.Media.DATE_TAKEN + "<?";
         String[] selectionArgs =  new String[]{ String.valueOf(ldate), String.valueOf(ldate1) };
         Cursor cursor = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, selection, selectionArgs, null);
-        list_coordinate = new ArrayList<>();
-        final List<String> list_image_path = new ArrayList<>();
-        final List<String> list_time = new ArrayList<>();
+
+        final List<String> list_image_path = new ArrayList<String>();
+        final List<String> list_time = new ArrayList<String>();
         while (cursor.moveToNext()) {
             String imagePath = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA));
             long date_taken = cursor.getLong(cursor.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN));
@@ -91,117 +122,77 @@ public class MapActivity extends AppCompatActivity {
                 String lngValue = exifInterface.getAttribute(ExifInterface.TAG_GPS_LONGITUDE);
                 String latRef = exifInterface.getAttribute(ExifInterface.TAG_GPS_LATITUDE_REF);
                 String lngRef = exifInterface.getAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF);
-                if(latValue != null && lngValue != null && latRef != null && lngRef != null) {
-                    Coordinate coordinate = new Coordinate(rationalToDouble(lngValue, lngRef), rationalToDouble(latValue, latRef));
-                    list_coordinate.add(coordinate);
+                if (latValue != null && lngValue != null && latRef != null && lngRef != null) {
+                    LatLng latLng = new LatLng(rationalToDouble(latValue, latRef), rationalToDouble(lngValue, lngRef));
+                    CoordinateConverter converter = new CoordinateConverter();
+                    converter.from(CoordinateConverter.CoordType.GPS);
+                    converter.coord(latLng);
+                    latLng = converter.convert();
+                    list_LatLng.add(latLng);
                     list_image_path.add(imagePath);
                     list_time.add(stime);
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(Thread.currentThread().getStackTrace()[2] + "", e.toString());
             }
         }
         cursor.close();
-        textView.setText(sdate + " " + list_coordinate.size() + " 个点");
-
-        mapView = findViewById(R.id.mapView);
-        mapView.rotation(false);
-        mapView.addScaleBar();
-        mapView.moveTo(118.778771, 32.043880, 5000);
-
-        String dir = Environment.getExternalStorageDirectory().getPath();
-        RLayer = mapView.addGoogleMapLayer("http://mt0.google.cn/vt/lyrs=m&hl=zh-CN&gl=cn&scale=2&x={X}&y={Y}&z={Z}", 0, 20, dir + "/cacheGoogleMapM.db");
-        if (VLayer == null) VLayer = mapView.addVectorLayer();
-        if (MLayer == null) MLayer = mapView.addMarkerLayer(new UCMarkerLayerListener() {
-            @Override
-            public boolean onItemSingleTapUp(int index, String title, String description, double x, double y) {
-                if(!title.equals("")) {
-                    textView_info.setText(title + "\n经度：" + x + "\n纬度：" + y + "\n" + description);
-                    int i = Integer.parseInt(title);
-                    Gps gps = PositionUtil.gcj_To_Gps84(y, x);
-                    marker.setXY(gps.getWgLon(), gps.getWgLat());
-                    MLayer.refresh();
-                    ImageView imageView = new ImageView(MapActivity.this);
-                    Uri uri = Uri.fromFile(new File(list_image_path.get(i)));
-                    imageView.setImageURI(uri);
-                    new AlertDialog.Builder(MapActivity.this).setTitle(list_time.get(i)).setView(imageView).setPositiveButton("确定", null).show();
-                }
-                return true;
-            }
-            @Override
-            public boolean onItemLongPress(int index, String title, String description, double x, double y) {
-                Toast.makeText(getBaseContext(), title + ", "+ description, Toast.LENGTH_SHORT).show();
-                textView_info.setText(title + "\n经度：" + x + "\n纬度：" + y);
-                return false;
-            }
-        });
-
-        mapView.setCoordinateFilter(filter_WGS_to_GCJ);
-        Log.e(Thread.currentThread().getStackTrace()[2] + "", "坐标数目：" + list_coordinate.size());
-        if (list_coordinate.size() > 1) {
-            coords = list_coordinate.toArray(new Coordinate[list_coordinate.size()]);
-            Geometry geometry = GF.createLineString(coords);
-            VLayer.addLine(geometry, 2, 0xFF0000FF);
-            mapView.moveTo(coords[coords.length / 2].x, coords[coords.length / 2].y, mapView.getScale());
-            Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.marker);
-            marker = MLayer.addBitmapItem(bitmap, coords[0].x, coords[0].y, "", "");
-
-            for (int i = 0; i < coords.length; i++) {
+        textView.setText(sdate + " " + list_LatLng.size() + " 个点");
+        if (list_LatLng.size() > 1) {
+            OverlayOptions OO_polyline = new PolylineOptions().width(4).color(0xA00000FF).points(list_LatLng);
+            mBaiduMap.addOverlay(OO_polyline);
+            for (int i = 0; i < list_LatLng.size(); i++) {
+                OverlayOptions options;
+                Bundle bundle = new Bundle();
+                bundle.putInt("index", i);
+                bundle.putString("time", list_time.get(i));
+                bundle.putString("image_path", list_image_path.get(i));
                 if (i == 0) {
-                    bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.marker_start);
-                } else if (i == coords.length - 1) {
-                    bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.marker_end);
+                    options = new MarkerOptions().position(list_LatLng.get(0)).icon(bitmap1).extraInfo(bundle);
+                } else if (i == list_LatLng.size() - 1) {
+                    options = new MarkerOptions().position(list_LatLng.get(list_LatLng.size() - 1)).icon(bitmap2).extraInfo(bundle);
                 } else {
-                    bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.marker_point);
+                    options = new MarkerOptions().position(list_LatLng.get(i)).icon(bitmap3).extraInfo(bundle);
                 }
-                MLayer.addBitmapItem(bitmap, coords[i].x, coords[i].y, "" + i, list_image_path.get(i));
+                mBaiduMap.addOverlay(options);
             }
-        }else{
+            mBaiduMap.animateMapStatus(MapStatusUpdateFactory.newLatLng(list_LatLng.get(list_LatLng.size() / 2)));
+        } else {
             textView_info.setText("没有有效的GPS坐标！");
         }
-
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         menu.add(0, 0, 0, "线路图");
-        menu.add(0, 1, 1, "地形图");
-        menu.add(0, 2, 2, "卫星图");
+        menu.add(0, 1, 1, "卫星图");
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
-        if (id == 0) {
-            if (maptype != 0) {
-                mapView.deleteLayer(RLayer);
-                String dir = Environment.getExternalStorageDirectory().getPath();
-                RLayer = mapView.addGoogleMapLayer("http://mt0.google.cn/vt/lyrs=m&hl=zh-CN&gl=cn&scale=2&x={X}&y={Y}&z={Z}", 0, 20, dir + "/cacheGoogleMapM.db");
-                mapView.moveLayer(RLayer, 0);
-                mapView.refresh();
-                maptype = 0;
-            }
-        } else if (id == 1) {
-            if (maptype != 1) {
-                mapView.deleteLayer(RLayer);
-                String dir = Environment.getExternalStorageDirectory().getPath();
-                RLayer = mapView.addGoogleMapLayer("http://mt0.google.cn/vt/lyrs=p&hl=zh-CN&gl=cn&scale=2&x={X}&y={Y}&z={Z}", 0, 20, dir + "/cacheGoogleMapP.db");
-                mapView.moveLayer(RLayer, 0);
-                mapView.refresh();
-                maptype = 1;
-            }
-        } else if (id == 2) {
-            if (maptype != 2) {
-                mapView.deleteLayer(RLayer);
-                String dir = Environment.getExternalStorageDirectory().getPath();
-                RLayer = mapView.addGoogleMapLayer("http://mt0.google.cn/vt/lyrs=y&hl=zh-CN&gl=cn&scale=2&x={X}&y={Y}&z={Z}", 0, 20, dir + "/cacheGoogleMapY.db");
-                mapView.moveLayer(RLayer, 0);
-                mapView.refresh();
-                maptype = 2;
-            }
+        switch (id){
+            case 0:
+                mBaiduMap.setMapType(BaiduMap.MAP_TYPE_NORMAL);
+                break;
+            case 1:
+                mBaiduMap.setMapType(BaiduMap.MAP_TYPE_SATELLITE);
+                break;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    class ClickListener implements View.OnClickListener {
+        @Override
+        public void onClick(View v) {
+            int id = v.getId();
+            if (id == R.id.imageButton_location) {
+                if (list_LatLng.size() > 1) {
+                    mBaiduMap.animateMapStatus(MapStatusUpdateFactory.newLatLng(list_LatLng.get(list_LatLng.size() / 2)));
+                }
+            }
+        }
     }
 
     double rationalToDouble(String rational, String ref) {
@@ -218,37 +209,6 @@ public class MapActivity extends AppCompatActivity {
             return -result;
         }
         return result;
-    }
-
-    UCCoordinateFilter filter_WGS_to_GCJ = new UCCoordinateFilter() {
-        @Override
-        public double[] to(double x, double y) {
-            double[] result = new double[2];
-            Gps gps = PositionUtil.gps84_To_Gcj02(y, x);
-            result[0] = gps.getWgLon();
-            result[1] = gps.getWgLat();
-            return result;
-        }
-
-        @Override
-        public double[] from(double x, double y) {
-            double[] result = new double[2];
-            Gps gps = PositionUtil.gcj_To_Gps84(y, x);
-            result[0] = gps.getWgLon();
-            result[1] = gps.getWgLat();
-            return result;
-        }
-    };
-
-    class ClickListener implements View.OnClickListener {
-        @Override
-        public void onClick(View v) {
-            if (v.getId() == R.id.imageButton_location) {
-                if (list_coordinate.size() > 1) {
-                    mapView.moveTo(coords[coords.length / 2].x, coords[coords.length / 2].y, mapView.getScale());
-                }
-            }
-        }
     }
 
 }
